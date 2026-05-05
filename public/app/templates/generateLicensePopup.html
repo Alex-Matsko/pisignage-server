@@ -1,0 +1,19 @@
+<div class="modal-header">
+  <h4 class="modal-title">Generate License</h4>
+</div>
+<div class="modal-body">
+  <p class="text-muted">Enter the Player ID (CPU Serial) and Site Name to generate a license file locally.</p>
+  <div class="form-group">
+    <label>Player ID (CPU Serial)</label>
+    <input class="form-control" type="text" ng-model="generateLicense.playerId" placeholder="e.g. b827eb1234abcd" />
+  </div>
+  <div class="form-group">
+    <label>Site Name</label>
+    <input class="form-control" type="text" ng-model="generateLicense.siteName" />
+  </div>
+  <p class="text-danger" ng-show="generateMsg">{{generateMsg}}</p>
+</div>
+<div class="modal-footer">
+  <button class="btn btn-success" ng-click="submitGenerateLicense()" ng-disabled="!generateLicense.playerId">Generate</button>
+  <button class="btn btn-default" ng-click="cancelGenerateLicense()">Cancel</button>
+</div>

@@ -57,6 +57,46 @@ angular.module('piSettings.controllers', []).
             }
         }
 
+        // generate license
+        $scope.generateLicense = {
+            playerId: '',
+            siteName: ''
+        };
+        $scope.generateMsg = null;
+
+        $scope.openGenerateLicense = function () {
+            $scope.generateLicense.playerId = '';
+            $scope.generateLicense.siteName = $scope.settings.installation || 'local';
+            $scope.generateMsg = null;
+            $scope.genModal = $modal.open({
+                animation: true,
+                scope: $scope,
+                templateUrl: '/app/templates/generateLicensePopup.html'
+            });
+        };
+
+        $scope.submitGenerateLicense = function () {
+            $http.post('/api/licenses/generate', {
+                playerId: $scope.generateLicense.playerId,
+                siteName: $scope.generateLicense.siteName
+            }).success(function (data) {
+                if (data.success) {
+                    $scope.generateMsg = null;
+                    $scope.genModal.dismiss();
+                    $scope.statusMsg = 'License generated for ' + $scope.generateLicense.playerId;
+                    $state.reload();
+                } else {
+                    $scope.generateMsg = data.stat_message;
+                }
+            }).error(function (err) {
+                $scope.generateMsg = 'Error generating license';
+            });
+        };
+
+        $scope.cancelGenerateLicense = function () {
+            $scope.genModal.dismiss();
+        };
+
         //settings part
         $http.get(piUrls.settings)
             .success(function (data) {
@@ -72,11 +112,9 @@ angular.module('piSettings.controllers', []).
                 .success(function(data, status) {
                     if (data.success) {
                     }
-                    //if ($scope.settingsForm.user.$dirty) {
                         $scope.settingsForm.$setPristine();
                         $scope.loadMsg = "reloading..."
                         setTimeout($window.location.reload.bind($window.location), 2000);
-                    //}
                 })
                 .error(function(data, status) {
                 });
