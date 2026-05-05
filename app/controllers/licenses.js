@@ -45,7 +45,8 @@ var tryGenerateLicense = function (playerId, siteName, cb) {
     var iv = crypto.randomBytes(16);
     var cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(encryptionKey.slice(0, 32)), iv);
     var encrypted = Buffer.concat([cipher.update(JSON.stringify(licenseInfo), 'utf8'), cipher.final()]);
-    var licenseContent = iv.toString('hex') + ':' + encrypted.toString('base64');
+    // Format: IV + encrypted data concatenated as hex (matches client expectations)
+    var licenseContent = Buffer.concat([iv, encrypted]).toString('hex');
     fs.writeFile(path.join(licenseDir, 'license_' + playerId + '.txt'), licenseContent, function (err) {
         if (err) { console.log(err); return cb(false); }
         console.log('The license file was created!');
