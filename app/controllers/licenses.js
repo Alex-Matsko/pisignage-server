@@ -30,6 +30,28 @@ var getTxtFiles = function(cb){
     })
 }
 
+/**
+ * Derives key and IV from password using EVP_BytesToKey (MD5-based),
+ * matching the algorithm used by the piSignage client (aes-192-cbc).
+ * keyLen = 24 bytes, ivLen = 16 bytes
+ */
+function deriveKeyIV(password) {
+    var pass = Buffer.from(password, 'utf8');
+    var result = [];
+    var prev = Buffer.alloc(0);
+    var needed = 24 + 16; // keyLen + ivLen for aes-192-cbc
+    while (needed > 0) {
+        prev = crypto.createHash('md5').update(Buffer.concat([prev, pass])).digest();
+        result.push(prev);
+        needed -= prev.length;
+    }
+    var keyIV = Buffer.concat(result);
+    return {
+        key: keyIV.subarray(0, 24),
+        iv:  keyIV.subarray(24, 40)
+    };
+}
+
 var tryGenerateLicense = function (playerId, siteName, cb) {
     var licenseInfo = {
         enabled: true,
@@ -38,16 +60,16 @@ var tryGenerateLicense = function (playerId, siteName, cb) {
         installation: siteName,
         domain: null
     };
+
+    // Use aes-192-cbc with EVP_BytesToKey derivation — matches client decryption logic
     var secret = 'pisignageLangford';
-    // HMAC-SHA1 key derived from playerId
-    var encryptionKey = crypto.createHmac('sha1', secret).update(playerId).digest('hex');
-    // AES-256-CBC encrypt
-    var iv = crypto.randomBytes(16);
-    var cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(encryptionKey.slice(0, 32)), iv);
-    var encrypted = Buffer.concat([cipher.update(JSON.stringify(licenseInfo), 'utf8'), cipher.final()]);
-    // Format: IV + encrypted data concatenated as hex (matches client expectations)
-    var licenseContent = Buffer.concat([iv, encrypted]).toString('hex');
-    fs.writeFile(path.join(licenseDir, 'license_' + playerId + '.txt'), licenseContent, function (err) {
+    var derived = deriveKeyIV(secret);
+    var cipher = crypto.createCipheriv('aes-192-cbc', derived.key, derived.iv);
+    var encrypted = cipher.update(JSON.stringify(licenseInfo), 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+
+    // Write as plain hex string — client reads it with encoding 'hex'
+    fs.writeFile(path.join(licenseDir, 'license_' + playerId + '.txt'), encrypted, function (err) {
         if (err) { console.log(err); return cb(false); }
         console.log('The license file was created!');
         return cb(true);
