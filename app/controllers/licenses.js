@@ -31,17 +31,17 @@ var getTxtFiles = function(cb){
 }
 
 /**
- * Derives key and IV from password using EVP_BytesToKey (MD5-based),
- * matching the algorithm used by the piSignage client (aes-192-cbc).
- * keyLen = 24 bytes, ivLen = 16 bytes
+ * Derives key and IV from password + salt using EVP_BytesToKey (MD5-based),
+ * matching OpenSSL enc format and the piSignage client decryption logic.
+ * keyLen = 24 bytes (aes-192), ivLen = 16 bytes
  */
-function deriveKeyIV(password) {
+function deriveKeyIV(password, salt) {
     var pass = Buffer.from(password, 'utf8');
     var result = [];
     var prev = Buffer.alloc(0);
     var needed = 24 + 16; // keyLen + ivLen for aes-192-cbc
     while (needed > 0) {
-        prev = crypto.createHash('md5').update(Buffer.concat([prev, pass])).digest();
+        prev = crypto.createHash('md5').update(Buffer.concat([prev, pass, salt])).digest();
         result.push(prev);
         needed -= prev.length;
     }
@@ -61,14 +61,20 @@ var tryGenerateLicense = function (playerId, siteName, cb) {
         domain: null
     };
 
-    // Use aes-192-cbc with EVP_BytesToKey derivation — matches client decryption logic
     var secret = 'pisignageLangford';
-    var derived = deriveKeyIV(secret);
+    // Generate random 8-byte salt — same as OpenSSL enc does
+    var salt = crypto.randomBytes(8);
+    var derived = deriveKeyIV(secret, salt);
     var cipher = crypto.createCipheriv('aes-192-cbc', derived.key, derived.iv);
-    var encrypted = cipher.update(JSON.stringify(licenseInfo), 'utf8', 'hex');
-    encrypted += cipher.final('hex');
 
-    // Write as plain hex string — client reads it with encoding 'hex'
+    // Build OpenSSL-compatible binary: "Salted__" + salt + ciphertext
+    var encrypted = Buffer.concat([
+        Buffer.from('Salted__'),
+        salt,
+        cipher.update(JSON.stringify(licenseInfo), 'utf8'),
+        cipher.final()
+    ]);
+
     fs.writeFile(path.join(licenseDir, 'license_' + playerId + '.txt'), encrypted, function (err) {
         if (err) { console.log(err); return cb(false); }
         console.log('The license file was created!');
