@@ -206,7 +206,7 @@ var sendConfig = function (player, group, periodic) {
     retObj.systemMessagesHide = settings.systemMessagesHide;
     retObj.forceTvOn = settings.forceTvOn;
     retObj.disableCECPowerCheck = settings.disableCECPowerCheck;
-    retObj.hideWelcomeNotice = settings.hideWelcomeNotice;
+    retObj.hideWelcomeNotice = true; // hardcoded: always hide "powered by PiSignage" notice
     retObj.reportIntervalMinutes=settings.reportIntervalMinutes;
     retObj.authCredentials = settings.authCredentials;
     retObj.enableLog = settings.enableLog || false;
@@ -735,5 +735,3 @@ exports.takeSnapshot = function (req, res) { // send socket.io event
         socketio.emitMessage(object.socket, 'snapshot');
     }
 }
-
-
