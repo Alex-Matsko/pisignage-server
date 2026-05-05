@@ -1,56 +1,50 @@
 'use strict;'
 
 var fs = require('fs'),
-	path = require('path'),
-	async = require('async'),
+    path = require('path'),
+    async = require('async'),
     exec = require('child_process').exec,
     _ = require('lodash'),
     crypto = require('crypto');
 
 var serverIp = require('ip').address();
 
-var	config = require('../../config/config'),
-	rest = require('../others/restware');
+var config = require('../../config/config'),
+    rest = require('../others/restware');
 
 var mongoose = require('mongoose'),
     Settings = mongoose.model('Settings'),
     settingsModel = null;
 
-var licenseDir = config.licenseDirPath
+var licenseDir = config.licenseDirPath;
 
 var getTxtFiles = function(cb){
     var txtOnly;
-    fs.readdir(licenseDir,function(err,files){
-        if(err)
-            return cb(err,null);
+    fs.readdir(licenseDir, function(err, files){
+        if (err) return cb(err, null);
         txtOnly = files.filter(function(file){
-            return file.match(/\.txt$/i)  // remove dot, hidden system files
+            return file.match(/\.txt$/i);
         });
-        cb(null,txtOnly);
-    })
-}
+        cb(null, txtOnly);
+    });
+};
 
 /**
- * Derives key and IV from password using EVP_BytesToKey (MD5-based),
- * matching the algorithm used by the piSignage client (aes-192-cbc).
- * keyLen = 24 bytes, ivLen = 16 bytes.
- * No salt — matches client which reads file as hex string directly.
+ * Derives key using EVP_BytesToKey (MD5, no salt) — matches client exactly.
+ * Client calls: crypto.createDecipheriv('aes-192-cbc', derivedKey, passwordString)
+ * So: key = EVP_BytesToKey(password, 24 bytes), iv = Buffer.from(password, 'utf8') first 16 bytes
  */
-function deriveKeyIV(password) {
+function deriveKey(password, keyLen) {
     var pass = Buffer.from(password, 'utf8');
     var result = [];
     var prev = Buffer.alloc(0);
-    var needed = 24 + 16; // keyLen + ivLen for aes-192-cbc
+    var needed = keyLen;
     while (needed > 0) {
         prev = crypto.createHash('md5').update(Buffer.concat([prev, pass])).digest();
         result.push(prev);
         needed -= prev.length;
     }
-    var keyIV = Buffer.concat(result);
-    return {
-        key: keyIV.subarray(0, 24),
-        iv:  keyIV.subarray(24, 40)
-    };
+    return Buffer.concat(result).subarray(0, keyLen);
 }
 
 var tryGenerateLicense = function (playerId, siteName, cb) {
@@ -62,17 +56,19 @@ var tryGenerateLicense = function (playerId, siteName, cb) {
         domain: null
     };
 
-    // Use aes-192-cbc with EVP_BytesToKey (no salt) — client reads file as hex string
     var secret = 'pisignageLangford';
-    var derived = deriveKeyIV(secret);
-    var cipher = crypto.createCipheriv('aes-192-cbc', derived.key, derived.iv);
+    // key: EVP_BytesToKey MD5 derive, 24 bytes
+    var key = deriveKey(secret, 24);
+    // iv: client passes password string directly to createDecipheriv, Node takes first 16 bytes
+    var iv = Buffer.from(secret, 'utf8').subarray(0, 16);
+
+    var cipher = crypto.createCipheriv('aes-192-cbc', key, iv);
     var encrypted = cipher.update(JSON.stringify(licenseInfo), 'utf8', 'hex');
     encrypted += cipher.final('hex');
 
-    // Write as plain hex string — client reads it with encoding 'hex'
     fs.writeFile(path.join(licenseDir, 'license_' + playerId + '.txt'), encrypted, function (err) {
         if (err) { console.log(err); return cb(false); }
-        console.log('The license file was created!');
+        console.log('The license file was created for player: ' + playerId);
         return cb(true);
     });
 };
@@ -85,98 +81,87 @@ exports.generateLicense = function (req, res) {
     });
 };
 
-exports.index = function(req,res){
-
-    getTxtFiles(function(err,files){
-        if(err)
-            return rest.sendError(res,'error in reading license directory',err);
-
-        return rest.sendSuccess(res,'total license list ',files);
-    })
+exports.index = function(req, res){
+    getTxtFiles(function(err, files){
+        if (err) return rest.sendError(res, 'error in reading license directory', err);
+        return rest.sendSuccess(res, 'total license list', files);
+    });
 };
 
-exports.saveLicense = function(req,res){ // save license files
-	var uploadedFiles = req.files["assets"],
-		savedFiles = [];
-		
-	async.each(uploadedFiles,function(file,callback){
-		fs.rename(file.path,path.join(licenseDir, file.originalname),function(err){
-			if(err)
-				return callback(err);
-			savedFiles.push({name: file.originalname , size: file.size});
-			callback();
-		});
-	},function(err){
-		if(err)
-			return rest.sendError(res,'Error in saving license ',err);
-		return rest.sendSuccess(res,'License saved successfuly',savedFiles);
-	})
+exports.saveLicense = function(req, res){
+    var uploadedFiles = req.files["assets"],
+        savedFiles = [];
+
+    async.each(uploadedFiles, function(file, callback){
+        fs.rename(file.path, path.join(licenseDir, file.originalname), function(err){
+            if (err) return callback(err);
+            savedFiles.push({name: file.originalname, size: file.size});
+            callback();
+        });
+    }, function(err){
+        if (err) return rest.sendError(res, 'Error in saving license', err);
+        return rest.sendSuccess(res, 'License saved successfully', savedFiles);
+    });
 };
 
+exports.deleteLicense = function(req, res){
+    fs.unlink(path.join(licenseDir, req.params['filename']), function(err){
+        if (err) return rest.sendError(res, "License " + req.params['filename'] + " can't be deleted", err);
 
-
-exports.deleteLicense = function(req,res){ // delete particular license and return new file list
-	fs.unlink(path.join(licenseDir,req.params['filename']),function(err){
-		if(err)
-			return rest.sendError(res,"License "+req.params['filename']+" can't be deleted",err);
-		
-		getTxtFiles(function(err,files){ // get all license
-			if(err)
-				return rest.sendError(res,'error in reading license directory',err);
-
-			return rest.sendSuccess(res,"License "+req.params['filename']+" deleted successfuly",files);
-		});
-	})
-}
+        getTxtFiles(function(err, files){
+            if (err) return rest.sendError(res, 'error in reading license directory', err);
+            return rest.sendSuccess(res, "License " + req.params['filename'] + " deleted successfully", files);
+        });
+    });
+};
 
 exports.getSettingsModel = function(cb) {
     Settings.findOne(function (err, settings) {
         if (err || !settings) {
             if (settingsModel) {
-                cb(null, settingsModel)
+                cb(null, settingsModel);
             } else {
                 settingsModel = new Settings();
                 settingsModel.save(cb);
             }
         } else {
-            cb(null,settings);
+            cb(null, settings);
         }
-    })
-}
+    });
+};
 
-exports.getSettings = function(req,res) {
+exports.getSettings = function(req, res) {
     exports.getSettingsModel(function (err, data) {
         if (err) {
             return rest.sendError(res, 'Unable to access Settings', err);
         } else {
-            var obj = data.toObject()
+            var obj = data.toObject();
             obj.serverIp = serverIp;
-            exec('git log -1 --format="%cd" && git log -1 --format="%H"',function(err,stdout,stderr){
-                if(err || stderr){
+            exec('git log -1 --format="%cd" && git log -1 --format="%H"', function(err, stdout, stderr){
+                if (err || stderr){
                     obj.date = 'N/A';
                     obj.version = 'N/A';
                     console.log('There was an error obtaining the current server version from git:');
                     console.log(stderr);
-                }else{
+                } else {
                     stdout = stdout.trim().split('\n');
-                    obj.date = [stdout[0].split(' ')[1],stdout[0].split(' ')[2],stdout[0].split(' ')[4]].join(' '); 
-                    obj.version = stdout[1].slice(0,6);
+                    obj.date = [stdout[0].split(' ')[1], stdout[0].split(' ')[2], stdout[0].split(' ')[4]].join(' ');
+                    obj.version = stdout[1].slice(0, 6);
                 }
                 return rest.sendSuccess(res, 'Settings', obj);
             });
         }
-    })
-}
+    });
+};
 
-exports.updateSettings = function(req,res) {
+exports.updateSettings = function(req, res) {
     var restart;
     Settings.findOne(function (err, settings) {
-        if (err)
-            return rest.sendError(res, 'Unable to update Settings', err);
+        if (err) return rest.sendError(res, 'Unable to update Settings', err);
 
         restart = true;
         if (settings)
-            settings = _.extend(settings, req.body)
+            settings = _.extend(settings, req.body);
         else
             settings = new Settings(req.body);
         settings.save(function (err, data) {
@@ -185,15 +170,15 @@ exports.updateSettings = function(req,res) {
             } else {
                 rest.sendSuccess(res, 'Settings Saved', data);
             }
-            if (restart)  {
-                console.log("restarting server")
+            if (restart) {
+                console.log("restarting server");
                 require('child_process').fork(require.main.filename);
                 process.exit(0);
             }
         });
-    })
-}
+    });
+};
 
-exports.getSettingsModel(function(err,settings){
-    licenseDir = config.licenseDirPath+(settings.installation || "local")
-})
+exports.getSettingsModel(function(err, settings){
+    licenseDir = config.licenseDirPath + (settings.installation || "local");
+});
