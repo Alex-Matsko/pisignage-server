@@ -4,7 +4,8 @@ var fs = require('fs'),
 	path = require('path'),
 	async = require('async'),
     exec = require('child_process').exec,
-    _ = require('lodash');
+    _ = require('lodash'),
+    CryptoJS = require('crypto-js');
 
 var serverIp = require('ip').address();
 
@@ -28,6 +29,32 @@ var getTxtFiles = function(cb){
         cb(null,txtOnly);
     })
 }
+
+var tryGenerateLicense = function (playerId, siteName, cb) {
+    var licenseInfo = {
+        enabled: true,
+        generatedOn: new Date().toISOString(),
+        validity: 0,
+        installation: siteName,
+        domain: null
+    };
+    var secret = 'pisignageLangford';
+    var encryptionCode = CryptoJS.HmacSHA1(playerId, secret).toString(CryptoJS.enc.Hex);
+    var licenseContent = CryptoJS.AES.encrypt(JSON.stringify(licenseInfo), encryptionCode).toString();
+    fs.writeFile(path.join(licenseDir, 'license_' + playerId + '.txt'), licenseContent, function (err) {
+        if (err) { console.log(err); return cb(false); }
+        console.log('The license file was created!');
+        return cb(true);
+    });
+};
+
+exports.generateLicense = function (req, res) {
+    tryGenerateLicense(req.body.playerId, req.body.siteName, function (isSuccess) {
+        return isSuccess
+            ? rest.sendSuccess(res, 'License was generated for player ' + req.body.playerId)
+            : rest.sendError(res, 'Error while generating license for ' + req.body.playerId);
+    });
+};
 
 exports.index = function(req,res){
 
@@ -142,4 +169,3 @@ exports.updateSettings = function(req,res) {
 exports.getSettingsModel(function(err,settings){
     licenseDir = config.licenseDirPath+(settings.installation || "local")
 })
-
