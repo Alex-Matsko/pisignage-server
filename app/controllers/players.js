@@ -189,24 +189,19 @@ var sendConfig = function (player, group, periodic) {
     retObj.disableAp =  group.disableAp || false;
     retObj.enablePio =  group.enablePio || false;
 
-    //if (!pipkgjson)
-        //pipkgjson = JSON.parse(fs.readFileSync(path.join(config.releasesDir,'package.json'), 'utf8'))
     retObj.currentVersion = { 
         version: pipkgjson.version, platform_version: pipkgjson.platform_version,
         beta: pipkgjsonBeta.version,
         versionP2:pipkgjson.versionP2
     }
-    // retObj.gcal = {
-    //     id: config.gCalendar.CLIENT_ID,
-    //     token: config.gCalendar.CLIENT_SECRET
-    // }
+
     if (periodic) {
     }
 
     retObj.systemMessagesHide = settings.systemMessagesHide;
     retObj.forceTvOn = settings.forceTvOn;
     retObj.disableCECPowerCheck = settings.disableCECPowerCheck;
-    retObj.hideWelcomeNotice = true; // hardcoded: always hide "powered by PiSignage" notice
+    retObj.hideWelcomeNotice = settings.hideWelcomeNotice;
     retObj.reportIntervalMinutes=settings.reportIntervalMinutes;
     retObj.authCredentials = settings.authCredentials;
     retObj.enableLog = settings.enableLog || false;
@@ -538,7 +533,6 @@ exports.playlistMedia = function (req, res) {
         sid = object.socket;
     var action = req.params.action;
 
-    // logger.log('info', 'Player action: ' + action);
     var socketIO = (object.newSocketIo?newSocketio:oldSocketio);
     socketIO.emitMessage(sid, 'playlist_media', action);
 
@@ -608,7 +602,6 @@ exports.swupdate = function (req, res) {
     }
     var socketio = (object.webSocket?webSocket:(object.newSocketIo?newSocketio:oldSocketio));
     socketio.emitMessage(object.socket, 'swupdate',version,'piimage'+pipkgjson.versionP2+'-p2.zip');
-    //console.log("updating to "+(version?version:'piimage'+pipkgjson.version+'.zip'));
     return rest.sendSuccess(res, 'SW update command issued');
 }
 
@@ -622,8 +615,6 @@ exports.upload = function (cpuId, filename, data) {
                         console.log("error", "Error in writing forever_out log for " + cpuId);
                         console.log(err);
                     }
-                    // else
-                    //     console.log("info","Forever Log file saved for player : "+cpuId);
                 })
             } else if (path.extname(filename) == '.log' && filename.indexOf('forever_out.log')===-1 ) {
                 try {
@@ -631,7 +622,6 @@ exports.upload = function (cpuId, filename, data) {
                     logData.installation = player.installation;
                     logData.playerId = player._id.toString();
                 } catch (e) {
-                    //corrupt file
                     console.log(player.cpuSerialNumber)
                     console.log("corrupt log file: "+filename);
                 }
@@ -639,7 +629,6 @@ exports.upload = function (cpuId, filename, data) {
                 var lines = data.split('\n'),
                     events = [];
                 for (var i = 0; i < lines.length; i++) {
-                    //console.log(lines[i]);
                     try {
                         logData = JSON.parse(lines[i]);
                         if (logData.category == "file" || logData.description == "connected to server")
@@ -649,7 +638,6 @@ exports.upload = function (cpuId, filename, data) {
                         events.push(logData);
                     } catch (e) {
                         //corrupt file
-                        //console.log("corrupt log file: "+filename);
                     }
                 }
             }
@@ -681,7 +669,7 @@ exports.tvPower = function(req,res){
 var snapShotTimer = {};
 var pendingSnapshots = {};
 
-exports.piScreenShot = function (sid,data) { // save screen shot in  _screenshots directory
+exports.piScreenShot = function (sid,data) {
     var img =  Buffer.from(data.data,"base64").toString("binary"),
         cpuId = data.playerInfo["cpuSerialNumber"];
 
@@ -703,7 +691,7 @@ exports.piScreenShot = function (sid,data) { // save screen shot in  _screenshot
     })
 }
 
-exports.takeSnapshot = function (req, res) { // send socket.io event
+exports.takeSnapshot = function (req, res) {
     var object = req.object,
         cpuId = object.cpuSerialNumber;
     if (pendingSnapshots[cpuId])
