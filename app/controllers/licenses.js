@@ -5,7 +5,7 @@ var fs = require('fs'),
 	async = require('async'),
     exec = require('child_process').exec,
     _ = require('lodash'),
-    CryptoJS = require('crypto-js');
+    crypto = require('crypto');
 
 var serverIp = require('ip').address();
 
@@ -39,8 +39,13 @@ var tryGenerateLicense = function (playerId, siteName, cb) {
         domain: null
     };
     var secret = 'pisignageLangford';
-    var encryptionCode = CryptoJS.HmacSHA1(playerId, secret).toString(CryptoJS.enc.Hex);
-    var licenseContent = CryptoJS.AES.encrypt(JSON.stringify(licenseInfo), encryptionCode).toString();
+    // HMAC-SHA1 key derived from playerId
+    var encryptionKey = crypto.createHmac('sha1', secret).update(playerId).digest('hex');
+    // AES-256-CBC encrypt
+    var iv = crypto.randomBytes(16);
+    var cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(encryptionKey.slice(0, 32)), iv);
+    var encrypted = Buffer.concat([cipher.update(JSON.stringify(licenseInfo), 'utf8'), cipher.final()]);
+    var licenseContent = iv.toString('hex') + ':' + encrypted.toString('base64');
     fs.writeFile(path.join(licenseDir, 'license_' + playerId + '.txt'), licenseContent, function (err) {
         if (err) { console.log(err); return cb(false); }
         console.log('The license file was created!');
@@ -145,7 +150,6 @@ exports.updateSettings = function(req,res) {
         if (err)
             return rest.sendError(res, 'Unable to update Settings', err);
 
-        //if (settings.installation != req.body.installation)
         restart = true;
         if (settings)
             settings = _.extend(settings, req.body)
