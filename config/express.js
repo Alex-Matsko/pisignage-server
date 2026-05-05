@@ -34,6 +34,11 @@ var allowCrossDomain = function (req, res, next) {
 
 var basicHttpAuth = function(req,res,next) {
 
+    // Skip auth for /licenses path — Pi client fetches license files via wget without credentials
+    if (req.path.indexOf('/licenses') === 0) {
+        return next();
+    }
+
     var auth = req.headers['authorization'];  // auth is in base64(username:password)  so we need to decode the base64
 
     if(!auth) {     // No Authorization header was passed in so it's the first time the browser hit us
